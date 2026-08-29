@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from ramsess.io import WINDOW_ORDER
 from ramsess.report import (
     BASELINE_CONFIG_NAME,
     DEFAULT_BASELINE,
@@ -276,6 +277,37 @@ def test_notice_reports_a_cli_override_of_a_window_value(folder: Path, capsys) -
     out = capsys.readouterr().out
     assert "overrides" in out
     assert "--baseline-lam" in out
+
+
+def test_baseline_parameters_print_in_physical_window_order(folder: Path, capsys) -> None:
+    """Low before high, matching every other window ordering in the codebase.
+
+    Asserts POSITION. The tests above check that each label and each source
+    appears, and would pass in any order; this is the one that pins the order.
+    Alphabetical sorting puts 'high' first. Nothing here names a window: the
+    expected order is read from WINDOW_ORDER.
+
+    print_baseline_config cannot use window_sort_key, because the resolver it
+    is fed by accepts arbitrary labels - see
+    test_arbitrary_window_labels_are_supported. It uses
+    window_display_order_key, which orders known labels physically and never
+    raises on the rest.
+    """
+    values, sources = resolve_baseline_config(folder, set(WINDOW_ORDER))
+    print_baseline_config(values, sources)
+    lines = capsys.readouterr().out.split("\n")
+
+    positions = []
+    for window in WINDOW_ORDER:
+        found = [i for i, line in enumerate(lines) if line == f"  {window}:"]
+        assert len(found) == 1, f"expected exactly one heading for {window!r}, got {found}"
+        positions.append(found[0])
+
+    assert positions == sorted(positions), (
+        f"baseline-parameter blocks are out of physical order: "
+        f"{list(zip(WINDOW_ORDER, positions))}. WINDOW_ORDER is {WINDOW_ORDER}, "
+        f"so {WINDOW_ORDER[0]!r} must print before {WINDOW_ORDER[1]!r}."
+    )
 
 
 def test_every_source_is_named_on_stdout(folder: Path, capsys) -> None:

@@ -8,7 +8,14 @@ import numpy as np
 import pytest
 
 from conftest import spectrum_lines, write_spectrum_file
-from ramsess.io import group_spectra, load_experiment, load_spectrum, window_sort_key
+from ramsess.io import (
+    WINDOW_ORDER,
+    group_spectra,
+    load_experiment,
+    load_spectrum,
+    window_display_order_key,
+    window_sort_key,
+)
 
 
 def test_steps_sort_numerically_not_lexically(make_experiment) -> None:
@@ -40,6 +47,36 @@ def test_low_sorts_before_high(make_experiment, low_lines, high_lines) -> None:
 def test_window_sort_key_rejects_unknown_label() -> None:
     with pytest.raises(ValueError, match="mid"):
         window_sort_key("mid")
+
+
+def test_window_display_order_key_orders_physically_and_never_raises() -> None:
+    """The guarantee that lets print_baseline_config use it at all.
+
+    Known labels physically, unknown labels after them and alphabetical among
+    themselves, and no exception for anything. Without all three this helper
+    could not stand in for window_sort_key at a display site, because the
+    resolver feeding that site accepts arbitrary labels.
+    """
+    # Known labels sort into WINDOW_ORDER position, whatever order they arrive in.
+    assert sorted(reversed(WINDOW_ORDER), key=window_display_order_key) == list(
+        WINDOW_ORDER
+    )
+
+    # An unknown label never raises, and lands after every known one.
+    unknown = "mid"
+    assert unknown not in WINDOW_ORDER
+    ordered = sorted([unknown, *reversed(WINDOW_ORDER)], key=window_display_order_key)
+    assert ordered == [*WINDOW_ORDER, unknown]
+
+    # Unknown labels are alphabetical among themselves, still after the known.
+    others = ["zeta", "alpha", "mid"]
+    assert not set(others) & set(WINDOW_ORDER)
+    mixed = sorted([*others, *reversed(WINDOW_ORDER)], key=window_display_order_key)
+    assert mixed == [*WINDOW_ORDER, *sorted(others)]
+
+    # It never raises, on anything, including the empty string.
+    for label in [*WINDOW_ORDER, "mid", "", "LOW", "low "]:
+        window_display_order_key(label)
 
 
 def test_headed_and_headerless_files_give_the_same_rows(tmp_path: Path) -> None:

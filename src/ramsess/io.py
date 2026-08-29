@@ -74,6 +74,36 @@ def window_sort_key(window: str) -> int:
         ) from None
 
 
+def window_display_order_key(window: str) -> tuple[int, int, str]:
+    """Return a sort position for a window label, tolerating unknown labels.
+
+    Known labels sort in :data:`WINDOW_ORDER` position, low before high.
+    Unknown labels follow all known ones, alphabetically among themselves.
+    **It never raises.**
+
+    **For display only.** Never use it where an unknown label should be an
+    error: :func:`window_sort_key` is the strict one and raises on purpose,
+    because a file carrying an unrecognised window label is a hard failure, not
+    something to sort around. This exists for the handful of printing sites
+    whose input is not guaranteed to be validated - notably the baseline
+    parameter block, which is fed by a resolver that accepts any label the
+    caller declares. Sorting output must never be able to crash a report, and
+    an ordering helper must never be mistaken for a check.
+
+    Args:
+        window: A window label, known or not.
+
+    Returns:
+        A tuple ordering known labels first by :data:`WINDOW_ORDER` position,
+        then unknown labels alphabetically. The three components keep the two
+        groups from ever comparing an int against a str.
+    """
+    try:
+        return (0, WINDOW_ORDER.index(window), "")
+    except ValueError:
+        return (1, 0, window)
+
+
 @dataclass(frozen=True, eq=False)
 class Spectrum:
     """One spectrum: one sample, one spectral window, one irradiation step."""

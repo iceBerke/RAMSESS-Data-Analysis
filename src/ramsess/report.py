@@ -18,7 +18,13 @@ from pathlib import Path
 
 import numpy as np
 
-from ramsess.io import Spectrum, group_spectra, guard_not_under_raw, window_sort_key
+from ramsess.io import (
+    Spectrum,
+    group_spectra,
+    guard_not_under_raw,
+    window_display_order_key,
+    window_sort_key,
+)
 
 # How far a file's wave range may sit from the modal range for its window label
 # before it is treated as a mismatch. 1.0 cm-1 is about 200x the largest genuine
@@ -270,7 +276,9 @@ def print_baseline_config(
     """Announce the resolved baseline parameters, per window, and their origin."""
     print("baseline parameters:")
     fallen_back: list[str] = []
-    for label in sorted(values):
+    # Display order, not validation: this resolver accepts whatever labels the
+    # caller declares, so window_sort_key would raise on a legitimate one.
+    for label in sorted(values, key=window_display_order_key):
         print(f"  {label}:")
         for key in ("lam", "p", "n_iter"):
             print(f"    {key} = {values[label][key]!r}   from {sources[label][key]}")

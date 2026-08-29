@@ -81,6 +81,31 @@ not an assumption about this dataset — so a file carrying any other window lab
 is correctly a hard failure. Do not "fix" this into a configurable list. If the
 instrument itself ever changes, the constant changes with it.
 
+There are two window sort keys, and picking the wrong one is a real mistake:
+
+- `window_sort_key` is the strict one and **raises on an unknown label**. Use it
+  wherever labels are validated — which is everywhere they come from loaded
+  spectra. An unrecognised label there is a hard failure, not something to sort
+  around.
+- `window_display_order_key` orders known labels physically, puts unknown ones
+  after them alphabetically, and **never raises**. It is for display only, at
+  the few printing sites whose input is not guaranteed validated. Never use it
+  in a validation path: an ordering helper must not be mistaken for a check.
+
+Only one site needs the tolerant key: the baseline parameter block in
+`print_baseline_config`. `resolve_baseline_config` accepts whatever labels its
+caller declares — `test_arbitrary_window_labels_are_supported` pins that — so
+the strict key would raise on a label the resolver legitimately supports.
+
+Six sites sort window labels alphabetically **on purpose** and were reviewed and
+left alone: `report.py` 167, 227, 368, 414 and 1312, and `plotting.py` 373.
+Each either builds an error message, where the ordering only decides which item
+is named first, or sits on the label-agnostic baseline path. `report.py:1312`
+is additionally a no-op — the cross-window notice can only ever list one window,
+because a cross-window row is by definition in the window the reference is not.
+None is worth a test. This was settled deliberately; do not reopen it without a
+reason that is not cosmetic.
+
 ## Check severity and gating
 
 Checks are HARD or SOFT. HARD means a file is not what its name says: duplicate
