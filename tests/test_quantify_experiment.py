@@ -461,6 +461,37 @@ def test_without_noise_regions_it_says_so_rather_than_guessing(
     assert all(row["signal_to_noise"] is None for row in rows)
 
 
+def test_noise_region_notices_print_in_physical_window_order(
+    one_sample_both_windows: Path, tmp_path: Path, capsys
+) -> None:
+    """Low before high, like every other window ordering in this codebase.
+
+    Asserts POSITION, not membership. ``test_stdout_announces_every_file_it_wrote``
+    already checks each notice appears, and would pass in any order; this is the
+    one that pins the order. Alphabetical sorting puts 'high' first, which
+    contradicts the rule that windows sort physically and never alphabetically.
+    Nothing here names a window: the expected order is read from WINDOW_ORDER.
+    """
+    run_quantify(one_sample_both_windows, tmp_path / "out")
+    lines = capsys.readouterr().out.split("\n")
+
+    positions = []
+    for window in WINDOW_ORDER:
+        found = [
+            i
+            for i, line in enumerate(lines)
+            if line.startswith(f"  noise region for {window}:")
+        ]
+        assert len(found) == 1, f"expected exactly one notice for {window!r}, got {found}"
+        positions.append(found[0])
+
+    assert positions == sorted(positions), (
+        f"noise-region notices are out of physical order: "
+        f"{list(zip(WINDOW_ORDER, positions))}. WINDOW_ORDER is {WINDOW_ORDER}, "
+        f"so {WINDOW_ORDER[0]!r} must print before {WINDOW_ORDER[1]!r}."
+    )
+
+
 # ===========================================================================
 # B2 - quantify_experiment, edge cases
 # ===========================================================================

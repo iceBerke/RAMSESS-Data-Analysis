@@ -1374,7 +1374,9 @@ def quantify_experiment(
     )
 
     if noise_regions:
-        for label in sorted(noise_regions):
+        # Physical order, low before high, never alphabetical - the same rule
+        # every other window ordering in this codebase follows.
+        for label in sorted(noise_regions, key=window_sort_key):
             low, high = noise_regions[label]
             print(f"  noise region for {label}: [{low:g}, {high:g}] cm-1")
     else:
