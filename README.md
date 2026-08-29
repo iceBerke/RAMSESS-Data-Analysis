@@ -10,11 +10,16 @@ at runtime; nothing about the dataset is hardcoded.
     data/raw/<experiment>/*.txt     read-only input, never modified
     data/raw/<experiment>/*.json    hand-written configuration
     data/derived/<experiment>/      generated data, gitignored
-    figures/<experiment>/           generated output, gitignored
+    figures/<experiment>/           generated output, gitignored except for
+                                    the {sample}_overlay.png references
 
 Nothing in the code writes under `data/raw/` — a guard raises if any code path
 tries. Raw data is the only thing here that cannot be regenerated; everything
-under `data/derived/` and `figures/` is reproducible from raw plus config.
+under `data/derived/` and `figures/` is reproducible from raw plus config, with
+one exception. The six `{sample}_overlay.png` files are tracked, because a
+regenerated overlay is whatever the code produces that day, which makes it
+useless as its own baseline. The committed PNG *is* the reference that
+`tests/test_raw_plot_reference.py` compares against.
 
 ## Filenames
 
@@ -131,7 +136,11 @@ experiment recorded on different grating settings needs no code change.
 
     .venv\Scripts\python.exe main.py quantify --experiment irradiation_sara [--sample ech2] [--force]
 
-Exports every baseline-corrected spectrum to
+Measures the configured bands first and writes only once measurement has
+succeeded, so a failed run leaves no derived tree at all and a tree that exists
+is always one whose measurements completed.
+
+On success it exports every baseline-corrected spectrum to
 `data/derived/<experiment>/<sample>_<window>_<step>_corrected.txt` as three
 tab-separated columns — wave, corrected intensity, fitted baseline — so the raw
 data is recoverable by summing columns 2 and 3. Each run also writes

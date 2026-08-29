@@ -205,10 +205,21 @@ def test_control_is_black_dashed_and_each_panel_has_its_own_legend(
 # by the same matplotlib at test time, so a dependency upgrade moves them
 # together and the test does not go stale. A pinned hash would break on the next
 # matplotlib, freetype or libpng release and report only that a hash changed.
+#
+# The skip guards below were written when figures/ was gitignored in full, so
+# "a fresh clone has none" was the reason they existed. That reasoning is now
+# stale for the six {sample}_overlay.png references: they are tracked, so a
+# fresh clone has them and these guards no longer fire on a normal run. They are
+# kept for the case they still cover - someone who has deleted figures/ locally.
+# The guard in the log-figure test below is a different matter and is live: log
+# figures remain gitignored build output.
 
 FIGURES_DIR = PROJECT_ROOT / "figures" / EXPERIMENT
 REGENERATE = (
     f".venv\\Scripts\\python.exe main.py plot --experiment {EXPERIMENT}"
+)
+REGENERATE_LOG = (
+    f".venv\\Scripts\\python.exe main.py plot --experiment {EXPERIMENT} --logy"
 )
 
 
@@ -266,16 +277,34 @@ def test_reference_figure_on_disk_matches_a_fresh_render(
 
 
 def test_no_log_scaled_figure_occupies_a_reference_filename() -> None:
-    """--logy must write its own filenames, never the six reference ones."""
+    """--logy must write its own filenames, never the six reference ones.
+
+    Counts the log figures on disk before asserting anything. An earlier version
+    put the assertions inside a per-sample ``if stray.is_file()``, which meant
+    that with no log figures present the test passed having examined nothing -
+    and the log figures are gitignored, so a fresh clone has none. Skipping once,
+    for the whole run, makes that state visible instead of silent.
+    """
     if not FIGURES_DIR.is_dir():
         pytest.skip(f"figures/ not generated; run:  {REGENERATE}")
-    for sample in sorted(REFERENCE_STRUCTURE):
-        stray = FIGURES_DIR / f"{sample}_overlay_log.png"
-        if stray.is_file():
-            assert stray != reference_png(sample)
-            assert not np.array_equal(
-                mpimg.imread(stray), mpimg.imread(reference_png(sample))
-            ), f"{stray.name} and {sample}_overlay.png hold the same image"
+
+    present = [
+        (sample, FIGURES_DIR / f"{sample}_overlay_log.png")
+        for sample in sorted(REFERENCE_STRUCTURE)
+        if (FIGURES_DIR / f"{sample}_overlay_log.png").is_file()
+    ]
+    if not present:
+        pytest.skip(
+            f"no {{sample}}_overlay_log.png on disk, so there is nothing to "
+            f"check; they are gitignored build output. Generate them with:  "
+            f"{REGENERATE_LOG}"
+        )
+
+    for sample, stray in present:
+        assert stray != reference_png(sample)
+        assert not np.array_equal(
+            mpimg.imread(stray), mpimg.imread(reference_png(sample))
+        ), f"{stray.name} and {sample}_overlay.png hold the same image"
 
 
 def test_titles_do_not_claim_correction(by_sample) -> None:

@@ -106,7 +106,7 @@ def test_too_few_points_raises() -> None:
 
 
 @pytest.mark.parametrize("half_width", [0.0, -5.0])
-def test_non_positive_half_width_raises(half_width: float) -> None:
+def test_non_positive_half_width_raises_in_measure_band(half_width: float) -> None:
     with pytest.raises(ValueError, match="half_width must be greater than 0"):
         measure_band(WAVE, np.zeros_like(WAVE), centre=550.0, half_width=half_width)
 

@@ -23,9 +23,16 @@ import csv
 import json
 from pathlib import Path
 
-import matplotlib
 import numpy as np
 import pytest
+
+# Load-bearing, not decoration: importing ramsess.plotting is what calls
+# matplotlib.use("Agg"), and it must happen before anything imports pyplot -
+# including conftest's close_figures teardown, which runs after every test in
+# this file. At module scope it happens during collection, so the backend is
+# fixed whichever test runs first. The assertion that it worked lives in
+# test_band_trend_figures.py, the file whose figures depend on it.
+import ramsess.plotting  # noqa: F401,E402  - imported for its backend side effect
 
 from conftest import tree_snapshot, write_spectrum_file
 from ramsess.io import WINDOW_ORDER, load_experiment
@@ -215,18 +222,6 @@ def one_sample_both_windows(tmp_path: Path) -> Path:
 # ===========================================================================
 # B1 - quantify_experiment, happy path
 # ===========================================================================
-
-
-def test_agg_backend_is_already_forced_by_importing_plotting() -> None:
-    """The backend is fixed at import time; no test needs to set it.
-
-    ``plotting.py`` calls ``matplotlib.use("Agg")`` before pyplot is imported,
-    which is a documented, deliberate global side effect. Asserting it here
-    verifies the guarantee without duplicating the mechanism.
-    """
-    import ramsess.plotting  # noqa: F401  - imported for its backend side effect
-
-    assert matplotlib.get_backend().lower() == "agg"
 
 
 def test_return_value_has_one_row_per_band_per_spectrum(

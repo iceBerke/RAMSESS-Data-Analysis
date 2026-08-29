@@ -155,7 +155,7 @@ def test_non_object_json_raises(folder: Path) -> None:
         resolve_baseline_config(folder, WINDOWS)
 
 
-def test_unknown_top_level_key_raises(folder: Path) -> None:
+def test_unknown_top_level_key_raises_in_baseline_config(folder: Path) -> None:
     write_config(folder, {"lam": 1e5, "smoothness": 3})
     with pytest.raises(ValueError, match="unknown key"):
         resolve_baseline_config(folder, WINDOWS)

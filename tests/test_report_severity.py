@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import shift_wave, spectrum_lines, vary
+from conftest import shift_wave, vary
 from ramsess.io import group_spectra, load_experiment
 from ramsess.report import (
     HARD,

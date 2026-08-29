@@ -72,8 +72,10 @@ settings will differ, and nothing in the code assumes these numbers.
 
 Windows sort in physical order, low before high, never alphabetically. The order
 and the set of valid labels both come from `WINDOW_ORDER` in `io.py`; sorting
-goes through `window_sort_key`, which raises on an unknown label. Code that
-picks a window still selects it by name rather than trusting position.
+goes through `window_sort_key`, which raises on an unknown label — except at the
+display-only sites described below, which use `window_display_order_key` and do
+not raise. Code that picks a window still selects it by name rather than
+trusting position.
 
 `WINDOW_ORDER = ("low", "high")` is hardcoded on purpose. These are the only two
 windows the RAMSESS instrument produces — a physical constraint of the hardware,
@@ -176,11 +178,23 @@ correction was a pure subtraction.
 
 ## Band quantification
 
-`quantify` exports corrected spectra to `data/derived/<experiment>/` as three
-columns — wave, corrected, fitted baseline — so raw is recoverable by summing
-columns 2 and 3, alongside a `provenance.json` recording the parameters used,
-their sources, the input hashes and a UTC timestamp. It then measures the bands
-configured in `data/raw/<experiment>/bands.json`:
+`quantify` measures the bands configured in `data/raw/<experiment>/bands.json`
+first, and writes only once measurement has succeeded. **Nothing is written
+until then.** A failed run leaves no derived tree at all — not a partial one,
+not even the directory — so a tree that exists is always one whose measurements
+completed and can never be mistaken for a successful export.
+
+The ordering is what makes that guarantee, not the validation. Config checks
+catch the errors they can name and give a better message for them, but ordering
+covers every way a run can fail, including the ones neither check anticipates.
+Do not move the writes back above the measurement.
+
+On success it exports the corrected spectra to `data/derived/<experiment>/` as
+three columns — wave, corrected, fitted baseline — so raw is recoverable by
+summing columns 2 and 3, alongside a `provenance.json` recording the parameters
+used, their sources, the input hashes and a UTC timestamp.
+
+The band configuration:
 
     {
       "reference": "si_522",
@@ -315,6 +329,43 @@ meant to stay short — extend it only with a reason, and update it here:
 **The suite must pass before any change is considered complete.** Regenerate the
 golden fixture only when the output is deliberately changed, never to make a
 failing test pass.
+
+## Audited and deliberately not acted on
+
+From the dead-code audit at `bb9dba9`. Recorded so the next audit reads these as
+settled rather than re-raising them. Two are confirmed dead and scheduled; the
+rest are known and fine.
+
+**Confirmed dead, deferred to the config-extraction step, which touches this
+area anyway:**
+
+- `VALID_WINDOWS` in `io.py` is a redundant alias for `WINDOW_ORDER`, referenced
+  once at the label check in `load_spectrum`. Safe to delete and fold into
+  `WINDOW_ORDER`.
+- The eight re-exports in `src/ramsess/__init__.py` have no consumer. Nothing
+  inside the repository imports the package root — every internal import goes to
+  `ramsess.io` directly, which was verified. That there is no consumer *outside*
+  the repository is the experimenter's statement, not something the audit could
+  check. Safe to delete on that basis.
+
+**Known, no action:**
+
+- `build_all_sample_band_trends` accepts `min_snr` and never uses it, so the
+  all-samples figure does not ring weak points the way the per-sample figure
+  does. Latent rather than active: no experiment configures `noise_regions`, so
+  no measurement is weak and neither builder draws a ring today. Deferred to the
+  trend-figure work. Decide then whether to implement the marking or drop the
+  parameter — do not simply delete it.
+- `venv/` in `.gitignore` matches nothing here. Harmless convention against a
+  common alternative layout.
+- The signal-to-noise path — `estimate_noise`, the `~` flag, the weak-band
+  listing — has never run against real data, because no `bands.json` configures
+  `noise_regions`. Synthetic tests only. Not a defect; know it before trusting
+  that path the first time a noise region is configured.
+
+The deliberate-looking-dead items already documented elsewhere in this file —
+the `bands.py` defence-in-depth checks, the Agg import side effect, the six
+alphabetical window sorts — are settled. Do not re-raise them either.
 
 ## Hard rules
 

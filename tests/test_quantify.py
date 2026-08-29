@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from conftest import spectrum_lines, vary, write_spectrum_file
+from conftest import write_spectrum_file
 from ramsess.io import guard_not_under_raw, load_experiment
 from ramsess.report import (
     BANDS_CONFIG_NAME,
@@ -281,14 +281,14 @@ def test_out_of_range_search_window_raises_during_config_loading(
 
 
 @pytest.mark.parametrize("half_width", [0, -3])
-def test_non_positive_half_width_raises(experiment: Path, valid_config, half_width) -> None:
+def test_non_positive_half_width_raises_in_bands_config(experiment: Path, valid_config, half_width) -> None:
     valid_config["bands"]["ref"]["half_width"] = half_width
     band_config(experiment / "exp", valid_config)
     with pytest.raises(ValueError, match="half_width must be greater than 0"):
         load_bands_config(experiment / "exp", window_ranges(experiment))
 
 
-def test_unknown_top_level_key_raises(experiment: Path, valid_config) -> None:
+def test_unknown_top_level_key_raises_in_bands_config(experiment: Path, valid_config) -> None:
     valid_config["extra"] = 1
     band_config(experiment / "exp", valid_config)
     with pytest.raises(ValueError, match="unknown key"):
@@ -302,7 +302,7 @@ def test_unknown_key_in_a_band_raises(experiment: Path, valid_config) -> None:
         load_bands_config(experiment / "exp", window_ranges(experiment))
 
 
-def test_noise_region_is_optional_and_validated(experiment: Path, valid_config) -> None:
+def test_noise_region_is_validated_and_round_trips(experiment: Path, valid_config) -> None:
     # Derived from the axis the fixture actually wrote, so the region cannot
     # drift outside the data and start failing the range check for a reason
     # this test is not about.
