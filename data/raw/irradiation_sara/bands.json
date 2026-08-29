@@ -1,0 +1,13 @@
+{
+  "reference": "si_522",
+  "bands": {
+    "si_522":       {"centre": 522,  "half_width": 15, "window": "low"},
+    "glycine_893":  {"centre": 893,  "half_width": 15, "window": "low"},
+    "glycine_979":  {"centre": 979,  "half_width": 15, "window": "low"},
+    "glycine_1328": {"centre": 1328, "half_width": 15, "window": "low"},
+    "glycine_1412": {"centre": 1412, "half_width": 15, "window": "low"},
+    "glycine_2975": {"centre": 2975, "half_width": 15, "window": "high"},
+    "glycine_3012": {"centre": 3012, "half_width": 15, "window": "high"},
+    "glycine_3146": {"centre": 3146, "half_width": 15, "window": "high"}
+  }
+}

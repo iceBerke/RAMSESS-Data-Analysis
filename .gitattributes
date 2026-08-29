@@ -1,0 +1,28 @@
+# Line-ending policy. Scoped deliberately: only files whose exact bytes are
+# hashed or compared are pinned here. Ordinary source normalises normally.
+
+# Raw spectra are written by the instrument with CRLF endings, and
+# write_provenance records the SHA-256 of those exact bytes for every source
+# file. If git normalised them to LF in the index, a clone on Linux or macOS
+# would check out different bytes and every hash in provenance.json would stop
+# matching the file it describes - the experimental record quietly failing its
+# own integrity check, on a machine where nothing looks wrong. The duplicate-
+# content check in collect_warnings hashes the same bytes.
+#
+# This covers the hand-written bands.json and baseline.json too. They are not
+# hashed today, but they are part of the same irreplaceable tree and there is
+# no reason to let anything under data/raw/ be rewritten in transit.
+data/raw/** -text
+
+# PNGs are binary and git's content sniffing already treats them as such. Said
+# explicitly because the six reference overlays are compared pixel by pixel by
+# tests/test_raw_plot_reference.py, and a reference that depends on sniffing is
+# a reference with a silent failure mode.
+*.png binary
+
+# Not pinned, and deliberately so: tests/fixtures/inspect_irradiation_sara.txt.
+# It is CRLF on disk and is compared against captured stdout, but both sides of
+# that comparison pass through universal-newline translation - read_text() on
+# the fixture and text=True on the subprocess - so neither side can observe a
+# line-ending change. Verified, not assumed. It normalises like any other text
+# file.

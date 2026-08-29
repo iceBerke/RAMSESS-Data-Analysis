@@ -1,0 +1,41 @@
+# What is tracked in this repository, and why.
+#
+# data/raw/ IS tracked. It is the experiment: the spectra and the hand-written
+# config files beside them. It is the only thing here that cannot be
+# regenerated from anything else, so it is the one thing that must be in the
+# repository.
+#
+# data/derived/ is NOT tracked. Every file in it is reproducible from raw plus
+# config by `quantify`, and the whole tree is rewritten on each run.
+#
+# figures/ is mostly NOT tracked, with one deliberate exception - see below.
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.vscode/
+desktop.ini
+
+data/derived/
+
+# The {sample}_overlay.png reference figures ARE tracked. Every other figure is
+# not.
+#
+# Those overlays are irreplaceable *as a reference*. They can be regenerated,
+# but a regenerated overlay is whatever the code happens to produce at that
+# moment, which makes test_raw_plot_reference.py's comparison self-fulfilling
+# and the test worthless. The stored PNG IS the baseline. Everything else under
+# figures/ is ordinary build output and would commit a fresh binary blob on
+# every plot run.
+#
+# Built up level by level on purpose. Git does not descend into an excluded
+# directory, so a bare `figures/` line followed by a negation would never match
+# anything - the directory has to be re-included before a file inside it can
+# be. The last pattern keys on the _overlay.png suffix alone: it names no
+# sample, and it must not match _overlay_log.png or _overlay_baseline.png.
+figures/*
+!figures/*/
+figures/*/*
+!figures/*/*_overlay.png

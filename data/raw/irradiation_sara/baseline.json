@@ -1,0 +1,6 @@
+{
+  "lam": 1e6,
+  "p": 0.01,
+  "n_iter": 10,
+  "windows": { "high": { "lam": 1e8 } }
+}
