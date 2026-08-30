@@ -1,33 +1,8 @@
-# RAMSESS analysis — working agreement
+# RAMSESS analysis — project notes
 
-## Two-phase protocol
-
-Every task runs in two phases. Do not start PHASE B until the user replies
-"PROCEED".
-
-**PHASE A — verification only.** Read files, list directories, run read-only
-commands. Create, edit, move and delete nothing. Install nothing. Check every
-assumption in the request against the actual data and report each as
-CONFIRMED / CONTRADICTED / UNKNOWN with the concrete evidence used — a count, a
-printed line, a min/max. Then list PROPOSED DEVIATIONS: anything the plan needs
-changed. Then stop and wait.
-
-**PHASE B — implementation.** Only after "PROCEED". Build exactly what was
-specified, nothing more.
-
-## No silent changes
-
-If you want to do anything not written in the request — rename something, add a
-helper, install a package, restructure a path, "improve" an API — do not do it.
-Stop, list it under PROPOSED DEVIATIONS, wait. This applies even when the change
-seems trivially correct or obviously beneficial. If an assumption turns out
-false, do not work around it: report and wait.
-
-## Report back after PHASE B
-
-State every file created or modified with its line count, the full stdout of
-anything run, anything done differently and why, and anything noticed that
-matters for the next step.
+**Read `RULES.md` first.** It governs process — the two-phase protocol, evidence
+standards, report structure, and what must never be regenerated. This file is
+about the project itself: the data, the code and the decisions already settled.
 
 ## Data
 
@@ -275,9 +250,7 @@ PNG hash, which would break on any matplotlib, freetype or libpng upgrade and
 report only that a hash changed. The disk checks skip, naming the command to
 run, when `figures/` has not been generated - but the six `{sample}_overlay.png`
 files are tracked, so a fresh clone has them and the disk checks run from the
-start. A regenerated overlay would be whatever the code produces at that moment,
-which makes the comparison self-fulfilling; the committed PNG is the baseline.
-Every other figure is gitignored build output and a fresh clone has none.
+start. Every other figure is gitignored build output and a fresh clone has none.
 
 ## Figure filenames
 
@@ -314,8 +287,6 @@ the former so they can inspect a real figure without monkeypatching.
 
 ## Tests
 
-    .venv\Scripts\python.exe -m pytest
-
 Tests live in `tests/`, use synthetic experiments written to `tmp_path`, and
 never write `data/` or `figures/`. Exactly two read `data/raw/`, and the list is
 meant to stay short — extend it only with a reason, and update it here:
@@ -325,10 +296,6 @@ meant to stay short — extend it only with a reason, and update it here:
 2. `test_raw_plot_reference.py` builds the overlay for each of the six real
    samples, because the reference output it guards is those figures; a synthetic
    fixture would guard something else.
-
-**The suite must pass before any change is considered complete.** Regenerate the
-golden fixture only when the output is deliberately changed, never to make a
-failing test pass.
 
 ## Audited and deliberately not acted on
 
@@ -384,9 +351,6 @@ alphabetical window sorts — are settled. Do not re-raise them either.
   position, that position is configuration, never a literal in the module. The
   module also writes no files and prints nothing.
 - Type hints and a docstring on every public function.
-- Always use the project venv at `.venv/`. Never install into or run with the
-  system interpreter. Run everything as
-  `.venv\Scripts\python.exe main.py <subcommand>`.
 - Small modules, one clear responsibility each. Logic lives in `src/ramsess/`.
   `main.py` is the single entry point and does argument parsing and dispatch
   only — no analysis, formatting or plotting logic. New commands become
