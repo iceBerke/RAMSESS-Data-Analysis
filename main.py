@@ -67,6 +67,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="label each panel with the bands configured in bands.json",
     )
+    plot.add_argument(
+        "--exclude-reference-from-scale",
+        action="store_true",
+        help="scale the panel to the other bands, letting the reference run off the top",
+    )
     plot.add_argument("--baseline-lam", type=float, help="override the baseline smoothness")
     plot.add_argument("--baseline-p", type=float, help="override the baseline asymmetry")
     plot.add_argument(
@@ -163,16 +168,31 @@ def main(argv: list[str] | None = None) -> int:
         print_baseline_config(values, sources)
         baseline_params = values
 
-    # Only --annotate reads bands.json. Plain plot touches no configuration file
-    # at all and must keep working in an experiment that has none.
+    # Two flags read bands.json, for different parts of it: --annotate wants the
+    # band list, --exclude-reference-from-scale wants the reference name. Either
+    # one triggers the load; neither requires the other, because labelling a
+    # figure and scaling it are separate choices. Plain plot still touches no
+    # configuration file at all and must keep working in an experiment with none.
+    needs_bands = [
+        flag
+        for flag, wanted in (
+            ("--annotate", args.annotate),
+            ("--exclude-reference-from-scale", args.exclude_reference_from_scale),
+        )
+        if wanted
+    ]
     bands = None
-    if args.annotate:
+    reference = None
+    if needs_bands:
         try:
-            _, bands, _ = load_bands_config(
+            reference, bands, _ = load_bands_config(
                 RAW_ROOT / args.experiment, common_window_ranges(spectra)
             )
         except FileNotFoundError as exc:
-            print(f"error: --annotate needs a band configuration: {exc}", file=sys.stderr)
+            print(
+                f"error: {', '.join(needs_bands)} needs a band configuration: {exc}",
+                file=sys.stderr,
+            )
             return 1
         except (ValueError, OSError) as exc:
             print(f"error: {exc}", file=sys.stderr)
@@ -191,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
             baseline_params=baseline_params,
             annotate=args.annotate,
             bands=bands,
+            reference=reference,
+            exclude_reference=args.exclude_reference_from_scale,
         )
     except HardCheckFailure as exc:
         # The individual failures have already been printed to stderr.

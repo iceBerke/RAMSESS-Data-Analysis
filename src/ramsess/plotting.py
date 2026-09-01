@@ -226,6 +226,87 @@ def _draw_break_marks(left_axes: plt.Axes, right_axes: plt.Axes) -> None:
     right_axes.plot([0, 0], [0, 1], transform=right_axes.transAxes, **marker)
 
 
+def _raise_top_excluding_band(
+    panel: plt.Axes,
+    drawn: list[tuple[np.ndarray, np.ndarray]],
+    exclude: BandSpec,
+    logy: bool,
+) -> float:
+    """Recompute one panel's upper limit with a band's search window ignored.
+
+    A band tens of times taller than its neighbours sets the panel's limit and
+    flattens everything else against the floor. Dropping its search window from
+    the limit calculation scales the panel to the rest of the data instead. The
+    band is still drawn in full; it simply runs off the top, and the title says
+    so.
+
+    Only the upper limit moves. The lower one is left exactly as the caller left
+    it, including the clamp that pulls a negative autoscale margin up to zero,
+    because a corrected panel's floor is a separate question from its ceiling.
+
+    The margin matches what autoscale would have applied, taken from
+    ``axes.ymargin`` rather than assumed, so an excluded panel is scaled the way
+    an ordinary one is. On a log axis that margin is applied in log space, which
+    is where matplotlib applies it.
+
+    Args:
+        panel: The panel to rescale. Must already hold its drawn data.
+        drawn: ``(wave, values)`` for every line drawn on this panel.
+        exclude: The band whose search window is left out of the calculation.
+            Supplied by the caller: nothing here knows any band's position.
+        logy: Whether the panel is on a log y-scale.
+
+    Returns:
+        The new upper limit.
+
+    Raises:
+        ValueError: If masking the band's window leaves no data to scale to, or
+            leaves nothing above the panel's floor - which happens when the
+            excluded band held all the signal there was, and would otherwise
+            produce an inverted or degenerate axis.
+    """
+    low, high = exclude.centre - exclude.half_width, exclude.centre + exclude.half_width
+    lowest, highest = np.inf, -np.inf
+    for wave, values in drawn:
+        keep = (wave < low) | (wave > high)
+        if not keep.any():
+            continue
+        lowest = min(lowest, float(values[keep].min()))
+        highest = max(highest, float(values[keep].max()))
+    if not (np.isfinite(lowest) and np.isfinite(highest)):
+        raise ValueError(
+            f"excluding the search window [{low:.3f}, {high:.3f}] of band "
+            f"{exclude.name!r} leaves no data to scale the panel to"
+        )
+
+    bottom, _ = panel.get_ylim()
+    margin = plt.rcParams["axes.ymargin"]
+    if logy:
+        # The masked minimum is data and may be zero or negative even though a
+        # log panel's reported floor never is; fall back to the floor then.
+        floor = lowest if lowest > 0.0 else bottom
+        with np.errstate(invalid="ignore"):
+            span = float(np.log10(highest)) - float(np.log10(floor))
+            top = float(10.0 ** (np.log10(highest) + margin * span))
+    else:
+        top = highest + margin * (highest - lowest)
+
+    # One guard for three ways this can go wrong, all of them reachable: the
+    # remaining data can sit entirely below the panel's floor, which would
+    # invert the axis; it can be non-positive on a log panel, which makes the
+    # arithmetic above NaN; and NaN fails this comparison too. Drawing an
+    # inverted or degenerate panel would be worse than refusing, because it
+    # still looks like a figure.
+    if not top > bottom:
+        raise ValueError(
+            f"excluding the search window [{low:.3f}, {high:.3f}] of band "
+            f"{exclude.name!r} leaves nothing above the panel's floor of "
+            f"{bottom:.6g}: the remaining data peaks at {highest:.6g}"
+        )
+    panel.set_ylim(bottom, top)
+    return top
+
+
 def _annotate_band_centres(
     figure: plt.Figure,
     panel: plt.Axes,
@@ -406,6 +487,7 @@ def build_sample_overlay(
     logy: bool = False,
     baseline_params: dict[str, dict[str, float | int]] | None = None,
     bands: dict[str, BandSpec] | None = None,
+    exclude_from_scale: BandSpec | None = None,
 ) -> plt.Figure:
     """Build the broken-axis overlay figure for one sample.
 
@@ -430,6 +512,11 @@ def build_sample_overlay(
             them. When given, each panel is labelled with the bands configured
             for its window. When None nothing is drawn and no limit is changed,
             so the figure is bit for bit what it has always been.
+        exclude_from_scale: A band whose search window is left out of the upper
+            limit calculation, on the one panel whose window is that band's. The
+            band is still drawn and runs off the top, and the title says which
+            band it was. Which band this is comes from the caller; nothing here
+            knows any band's position. When None no limit is changed.
 
     Returns:
         The open figure.
@@ -478,6 +565,7 @@ def build_sample_overlay(
 
     for window, panel in zip(windows, axes):
         panel_steps = []
+        panel_values: list[tuple[np.ndarray, np.ndarray]] = []
         for spectrum in by_window[window]:
             colour, linestyle = _style_for_step(spectrum.step, min_step, max_step)
             if baseline_params is None:
@@ -498,6 +586,7 @@ def build_sample_overlay(
             else:
                 drawn_corrected.append((line, spectrum, values, fitted))
             panel_steps.append(spectrum.step)
+            panel_values.append((spectrum.wave, values))
         panel.set_xlabel(X_LABEL)
 
         if logy:
@@ -512,6 +601,13 @@ def build_sample_overlay(
             bottom, top = panel.get_ylim()
             if bottom < 0:
                 panel.set_ylim(bottom=0, top=top)
+
+        # After the scale and the clamp, so it composes with both: set_yscale
+        # re-autoscales and would undo a limit set before it. Before the legend
+        # and the labels, because loc="best" and the reserved band are both
+        # measured against the panel this leaves behind.
+        if exclude_from_scale is not None and window == exclude_from_scale.window:
+            _raise_top_excluding_band(panel, panel_values, exclude_from_scale, logy)
 
         # One legend per panel, listing only the steps drawn in that panel: a
         # sample can be missing a step in one window but not the other.
@@ -553,6 +649,15 @@ def build_sample_overlay(
         # Stated on the figure itself so a corrected plot can never be mistaken
         # for a raw one once it is out of the directory it was written to.
         title = f"{title} - BASELINE CORRECTED ({_params_label(baseline_params, windows)})"
+    if exclude_from_scale is not None:
+        # Said on the figure for the same reason. An excluded band can run many
+        # panel-heights past the top edge, and a reader who cannot see its peak
+        # has no other way to know it was left out of the scale. The band name
+        # goes in the title, never in the filename.
+        title = (
+            f"{title} - y-SCALE EXCLUDES {exclude_from_scale.name} "
+            f"({exclude_from_scale.window} panel; its peak runs off the top)"
+        )
     figure.suptitle(title)
 
     if baseline_params is None:
@@ -830,6 +935,7 @@ def plot_sample_overlay(
     logy: bool = False,
     baseline_params: dict[str, dict[str, float | int]] | None = None,
     bands: dict[str, BandSpec] | None = None,
+    exclude_from_scale: BandSpec | None = None,
 ) -> Path:
     """Draw every step of one sample as a broken-axis overlay and save it.
 
@@ -843,6 +949,7 @@ def plot_sample_overlay(
         logy: Put both panels on a log y-scale.
         baseline_params: Passed through; None draws raw data.
         bands: Passed through; None draws no band labels.
+        exclude_from_scale: Passed through; None changes no limit.
 
     Returns:
         The path written.
@@ -851,7 +958,11 @@ def plot_sample_overlay(
         ValueError: Anything :func:`build_sample_overlay` raises.
     """
     figure = build_sample_overlay(
-        spectra, logy=logy, baseline_params=baseline_params, bands=bands
+        spectra,
+        logy=logy,
+        baseline_params=baseline_params,
+        bands=bands,
+        exclude_from_scale=exclude_from_scale,
     )
     return _save(figure, output_path)
 

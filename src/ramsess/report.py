@@ -865,6 +865,8 @@ def write_sample_overlays(
     baseline_params: dict[str, float | int] | None = None,
     annotate: bool = False,
     bands: dict[str, BandSpec] | None = None,
+    reference: str | None = None,
+    exclude_reference: bool = False,
 ) -> list[Path]:
     """Write one overlay figure per sample and print a line for each.
 
@@ -886,8 +888,13 @@ def write_sample_overlays(
         annotate: Label each panel with the bands configured for its window,
             writing to its own filenames instead of the unannotated ones.
         bands: The configured bands, as ``load_bands_config`` returns them.
-            Required when ``annotate`` is on. The diagnostic figure is never
-            annotated, so it ignores both of these.
+            Required when ``annotate`` or ``exclude_reference`` is on. The
+            diagnostic figure is never annotated and never rescaled, so it
+            ignores all of these.
+        reference: Name of the reference band, as ``load_bands_config`` returns
+            it. Required when ``exclude_reference`` is on.
+        exclude_reference: Leave the reference band's search window out of the
+            upper limit calculation, on the panel that band belongs to.
 
     Returns:
         The paths written, in sample order.
@@ -896,8 +903,9 @@ def write_sample_overlays(
         HardCheckFailure: If hard checks fail and ``force`` is not set. The
             individual failures are printed to stderr before raising.
         ValueError: If ``sample`` names a sample not present in the experiment,
-            a baseline mode is requested without parameters, or annotation is
-            requested without bands.
+            a baseline mode is requested without parameters, annotation is
+            requested without bands, or the reference exclusion is requested
+            without a band configuration naming one.
     """
     # Imported here so that the inspect path never pulls in matplotlib and never
     # has the process backend fixed to Agg on its behalf.
@@ -907,6 +915,16 @@ def write_sample_overlays(
         raise ValueError("a baseline mode was requested without baseline parameters")
     if annotate and bands is None:
         raise ValueError("annotation was requested without a band configuration")
+    if exclude_reference and (bands is None or reference is None):
+        raise ValueError(
+            "the reference exclusion was requested without a band configuration "
+            "naming a reference"
+        )
+    if exclude_reference and reference not in bands:
+        raise ValueError(
+            f"reference {reference!r} is not among the configured bands: "
+            f"{', '.join(sorted(bands))}"
+        )
 
     preflight("plot", experiment, spectra, force=force)
 
@@ -936,10 +954,12 @@ def write_sample_overlays(
     # a caller ever needs to override it, this is the place.
     scale_suffix = LOG_SCALE_SUFFIX if logy else ""
     annotated_suffix = ANNOTATED_SUFFIX if annotate else ""
-    # An annotated run replaces the unannotated figure rather than joining it,
-    # so the six reference overlays can only ever come from a run with neither
-    # flag set.
+    excluded_suffix = REFERENCE_EXCLUDED_SUFFIX if exclude_reference else ""
+    # An annotated or rescaled run replaces the plain figure rather than joining
+    # it, so the six reference overlays can only ever come from a run with none
+    # of these flags set.
     overlay_bands = bands if annotate else None
+    overlay_exclude = bands[reference] if exclude_reference else None
 
     written: list[Path] = []
     for name in wanted:
@@ -950,9 +970,11 @@ def write_sample_overlays(
         if not baseline and not diagnostic:
             path = plot_sample_overlay(
                 group,
-                output_directory / f"{name}_overlay{annotated_suffix}{scale_suffix}.png",
+                output_directory
+                / f"{name}_overlay{annotated_suffix}{excluded_suffix}{scale_suffix}.png",
                 logy=logy,
                 bands=overlay_bands,
+                exclude_from_scale=overlay_exclude,
             )
             written.append(path)
             print(f"wrote {path}   {_dominance(group)}")
@@ -961,10 +983,12 @@ def write_sample_overlays(
             path = plot_sample_overlay(
                 group,
                 output_directory
-                / f"{name}_overlay_baseline{annotated_suffix}{scale_suffix}.png",
+                / f"{name}_overlay_baseline{annotated_suffix}{excluded_suffix}"
+                f"{scale_suffix}.png",
                 logy=logy,
                 baseline_params=baseline_params,
                 bands=overlay_bands,
+                exclude_from_scale=overlay_exclude,
             )
             written.append(path)
             print(f"wrote {path}   baseline corrected   {_dominance(group)}")
@@ -1008,6 +1032,13 @@ LOG_SCALE_SUFFIX = "_log"
 # annotated run cannot land on an unannotated run's filename. The diagnostic
 # figure is never annotated, so it carries no suffix here either.
 ANNOTATED_SUFFIX = "_annotated"
+
+# Appended to the figures whose upper limit was computed with the reference
+# band's window left out. It names no band on purpose: the flag is keyed to
+# whichever band bands.json calls the reference, so one experiment's figures can
+# only ever mean one thing by it, and no unvalidated band name reaches a path.
+# The band is named in the title instead, where a path's rules do not apply.
+REFERENCE_EXCLUDED_SUFFIX = "_refexcluded"
 
 DERIVED_HEADER = (
     "# wave(cm-1)\tcorrected_intensity(counts)\tfitted_baseline(counts)"
