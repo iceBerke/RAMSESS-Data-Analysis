@@ -863,6 +863,8 @@ def write_sample_overlays(
     baseline: bool = False,
     diagnostic: bool = False,
     baseline_params: dict[str, float | int] | None = None,
+    annotate: bool = False,
+    bands: dict[str, BandSpec] | None = None,
 ) -> list[Path]:
     """Write one overlay figure per sample and print a line for each.
 
@@ -881,6 +883,11 @@ def write_sample_overlays(
         diagnostic: Write one fit-inspection figure per sample per window.
         baseline_params: ``lam``, ``p`` and ``n_iter``, required when either
             baseline mode is on.
+        annotate: Label each panel with the bands configured for its window,
+            writing to its own filenames instead of the unannotated ones.
+        bands: The configured bands, as ``load_bands_config`` returns them.
+            Required when ``annotate`` is on. The diagnostic figure is never
+            annotated, so it ignores both of these.
 
     Returns:
         The paths written, in sample order.
@@ -889,7 +896,8 @@ def write_sample_overlays(
         HardCheckFailure: If hard checks fail and ``force`` is not set. The
             individual failures are printed to stderr before raising.
         ValueError: If ``sample`` names a sample not present in the experiment,
-            or a baseline mode is requested without parameters.
+            a baseline mode is requested without parameters, or annotation is
+            requested without bands.
     """
     # Imported here so that the inspect path never pulls in matplotlib and never
     # has the process backend fixed to Agg on its behalf.
@@ -897,6 +905,8 @@ def write_sample_overlays(
 
     if (baseline or diagnostic) and baseline_params is None:
         raise ValueError("a baseline mode was requested without baseline parameters")
+    if annotate and bands is None:
+        raise ValueError("annotation was requested without a band configuration")
 
     preflight("plot", experiment, spectra, force=force)
 
@@ -918,11 +928,18 @@ def write_sample_overlays(
 
     # Filenames encode every flag that changes what is drawn, so that the same
     # path always means the same bytes and no combination can overwrite
-    # another's output. Only `logy` needs encoding: it changes the two overlay
-    # figures, and the diagnostic figure does not take it at all. The scheme is
-    # computed here from the flags this function already has rather than being
-    # injectable - if a caller ever needs to override it, this is the place.
+    # another's output. Two flags need encoding: `logy` and `annotate`, both of
+    # which change the two overlay figures. The diagnostic figure takes neither,
+    # so it carries no suffix at all. The content flag goes before the scale
+    # suffix, keeping `_log` last as it already was. The scheme is computed here
+    # from the flags this function already has rather than being injectable - if
+    # a caller ever needs to override it, this is the place.
     scale_suffix = LOG_SCALE_SUFFIX if logy else ""
+    annotated_suffix = ANNOTATED_SUFFIX if annotate else ""
+    # An annotated run replaces the unannotated figure rather than joining it,
+    # so the six reference overlays can only ever come from a run with neither
+    # flag set.
+    overlay_bands = bands if annotate else None
 
     written: list[Path] = []
     for name in wanted:
@@ -932,7 +949,10 @@ def write_sample_overlays(
         # never touches the raw figure, so both persist side by side on disk.
         if not baseline and not diagnostic:
             path = plot_sample_overlay(
-                group, output_directory / f"{name}_overlay{scale_suffix}.png", logy=logy
+                group,
+                output_directory / f"{name}_overlay{annotated_suffix}{scale_suffix}.png",
+                logy=logy,
+                bands=overlay_bands,
             )
             written.append(path)
             print(f"wrote {path}   {_dominance(group)}")
@@ -940,9 +960,11 @@ def write_sample_overlays(
         if baseline:
             path = plot_sample_overlay(
                 group,
-                output_directory / f"{name}_overlay_baseline{scale_suffix}.png",
+                output_directory
+                / f"{name}_overlay_baseline{annotated_suffix}{scale_suffix}.png",
                 logy=logy,
                 baseline_params=baseline_params,
+                bands=overlay_bands,
             )
             written.append(path)
             print(f"wrote {path}   baseline corrected   {_dominance(group)}")
@@ -981,6 +1003,11 @@ def _dominance(spectra: list[Spectrum]) -> str:
 # run cannot land on the linear run's filename. The diagnostic figure never
 # takes `logy`, so it carries no suffix.
 LOG_SCALE_SUFFIX = "_log"
+
+# Appended to the figures carrying band labels, before the scale suffix, so an
+# annotated run cannot land on an unannotated run's filename. The diagnostic
+# figure is never annotated, so it carries no suffix here either.
+ANNOTATED_SUFFIX = "_annotated"
 
 DERIVED_HEADER = (
     "# wave(cm-1)\tcorrected_intensity(counts)\tfitted_baseline(counts)"

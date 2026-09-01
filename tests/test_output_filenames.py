@@ -20,13 +20,31 @@ import pytest
 
 from conftest import vary
 from ramsess.io import load_experiment
-from ramsess.report import LOG_SCALE_SUFFIX, write_sample_overlays
+from ramsess.report import (
+    ANNOTATED_SUFFIX,
+    LOG_SCALE_SUFFIX,
+    BandSpec,
+    write_sample_overlays,
+)
 
 BASELINE = {
     "low": {"lam": 1e6, "p": 0.01, "n_iter": 10},
     "high": {"lam": 1e8, "p": 0.01, "n_iter": 10},
 }
-COMBINATIONS = list(itertools.product([False, True], repeat=3))  # baseline, diagnostic, logy
+
+# Bands inside the synthetic windows built below. Two of the low ones sit close
+# enough together to need a second label row, so the annotated runs exercise the
+# row-stacking path rather than only the easy case.
+BANDS = {
+    "a": BandSpec(name="a", centre=230.0, half_width=5.0, window="low"),
+    "b": BandSpec(name="b", centre=240.0, half_width=5.0, window="low"),
+    "c": BandSpec(name="c", centre=290.0, half_width=5.0, window="low"),
+    "d": BandSpec(name="d", centre=2420.0, half_width=5.0, window="high"),
+    "e": BandSpec(name="e", centre=2470.0, half_width=5.0, window="high"),
+}
+
+# baseline, diagnostic, logy, annotate
+COMBINATIONS = list(itertools.product([False, True], repeat=4))
 
 
 def peaked(start: float, spacing: float, n: int, peak_at: int, base: float) -> list[str]:
@@ -56,7 +74,7 @@ def build_experiment(root: Path) -> Path:
     return root / "raw"
 
 
-def run(spectra, root: Path, baseline: bool, diagnostic: bool, logy: bool):
+def run(spectra, root: Path, baseline: bool, diagnostic: bool, logy: bool, annotate: bool):
     """Run one flag combination into its own output root, return {name: bytes}."""
     import contextlib
     import io as _io
@@ -70,6 +88,8 @@ def run(spectra, root: Path, baseline: bool, diagnostic: bool, logy: bool):
             baseline=baseline,
             diagnostic=diagnostic,
             baseline_params=BASELINE if (baseline or diagnostic) else None,
+            annotate=annotate,
+            bands=BANDS if annotate else None,
         )
     return {path.name: path.read_bytes() for path in written}
 
@@ -84,20 +104,21 @@ def spectra(tmp_path_factory):
 def all_runs(spectra, tmp_path_factory):
     """Every combination, each into an isolated directory so none can clobber.
 
-    Module-scoped because rendering eight combinations is the slow part of this
-    module; running it once per test would multiply that by the test count for
-    no extra coverage.
+    Module-scoped because rendering sixteen combinations is the slow part of
+    this module; running it once per test would multiply that by the test count
+    for no extra coverage.
     """
     root = tmp_path_factory.mktemp("runs")
     return {
-        (baseline, diagnostic, logy): run(
+        (baseline, diagnostic, logy, annotate): run(
             spectra,
-            root / f"out_{int(baseline)}{int(diagnostic)}{int(logy)}",
+            root / f"out_{int(baseline)}{int(diagnostic)}{int(logy)}{int(annotate)}",
             baseline,
             diagnostic,
             logy,
+            annotate,
         )
-        for baseline, diagnostic, logy in COMBINATIONS
+        for baseline, diagnostic, logy, annotate in COMBINATIONS
     }
 
 
@@ -128,16 +149,16 @@ def test_differing_content_always_gets_a_different_path(all_runs) -> None:
 
 
 def test_log_and_linear_overlays_are_separate_files(all_runs) -> None:
-    linear = all_runs[(False, False, False)]
-    log = all_runs[(False, False, True)]
+    linear = all_runs[(False, False, False, False)]
+    log = all_runs[(False, False, True, False)]
     assert set(linear) == {"s_overlay.png"}
     assert set(log) == {f"s_overlay{LOG_SCALE_SUFFIX}.png"}
     assert set(linear).isdisjoint(log), "a log run must not land on the raw filename"
 
 
 def test_log_and_linear_baseline_overlays_are_separate_files(all_runs) -> None:
-    linear = all_runs[(True, False, False)]
-    log = all_runs[(True, False, True)]
+    linear = all_runs[(True, False, False, False)]
+    log = all_runs[(True, False, True, False)]
     assert set(linear) == {"s_overlay_baseline.png"}
     assert set(log) == {f"s_overlay_baseline{LOG_SCALE_SUFFIX}.png"}
     assert set(linear).isdisjoint(log)
@@ -150,7 +171,7 @@ def test_the_raw_filename_is_produced_only_by_the_raw_combination(all_runs) -> N
         for combination, outputs in all_runs.items()
         if "s_overlay.png" in outputs
     ]
-    assert producers == [(False, False, False)]
+    assert producers == [(False, False, False, False)]
 
 
 def test_diagnostic_filenames_carry_no_scale_suffix(all_runs) -> None:
@@ -163,10 +184,78 @@ def test_diagnostic_filenames_carry_no_scale_suffix(all_runs) -> None:
 
 def test_logy_is_a_no_op_for_the_diagnostic_figure(all_runs) -> None:
     """Documented behaviour: --logy changes nothing about the diagnostic."""
-    without = {k: v for k, v in all_runs[(False, True, False)].items() if "check" in k}
-    with_logy = {k: v for k, v in all_runs[(False, True, True)].items() if "check" in k}
+    without = {k: v for k, v in all_runs[(False, True, False, False)].items() if "check" in k}
+    with_logy = {k: v for k, v in all_runs[(False, True, True, False)].items() if "check" in k}
     assert without and with_logy
     assert without == with_logy
+
+
+@pytest.mark.parametrize(
+    "baseline,logy,plain_name,annotated_name",
+    [
+        (False, False, "s_overlay.png", f"s_overlay{ANNOTATED_SUFFIX}.png"),
+        (
+            False,
+            True,
+            f"s_overlay{LOG_SCALE_SUFFIX}.png",
+            f"s_overlay{ANNOTATED_SUFFIX}{LOG_SCALE_SUFFIX}.png",
+        ),
+        (
+            True,
+            False,
+            "s_overlay_baseline.png",
+            f"s_overlay_baseline{ANNOTATED_SUFFIX}.png",
+        ),
+        (
+            True,
+            True,
+            f"s_overlay_baseline{LOG_SCALE_SUFFIX}.png",
+            f"s_overlay_baseline{ANNOTATED_SUFFIX}{LOG_SCALE_SUFFIX}.png",
+        ),
+    ],
+)
+def test_annotating_changes_the_figure_and_its_name(
+    all_runs, baseline: bool, logy: bool, plain_name: str, annotated_name: str
+) -> None:
+    """Annotation must actually draw something, under its own name.
+
+    Both halves matter. A name that changed while the pixels did not would mean
+    the flag renamed the output and drew nothing, which no filename test would
+    catch on its own.
+    """
+    plain = all_runs[(baseline, False, logy, False)]
+    annotated = all_runs[(baseline, False, logy, True)]
+    assert set(plain) == {plain_name}
+    assert set(annotated) == {annotated_name}
+    assert annotated[annotated_name] != plain[plain_name], (
+        f"{annotated_name} holds the same pixels as {plain_name}: --annotate "
+        f"changed the filename but drew no labels"
+    )
+
+
+def test_an_annotated_run_never_writes_an_unannotated_overlay(all_runs) -> None:
+    """The six reference overlays must be unreachable from an annotated run."""
+    unannotated = {
+        "s_overlay.png",
+        f"s_overlay{LOG_SCALE_SUFFIX}.png",
+        "s_overlay_baseline.png",
+        f"s_overlay_baseline{LOG_SCALE_SUFFIX}.png",
+    }
+    for combination, outputs in all_runs.items():
+        if not combination[3]:
+            continue
+        assert unannotated.isdisjoint(outputs), (
+            f"{combination} carries --annotate yet wrote "
+            f"{sorted(unannotated & set(outputs))}"
+        )
+
+
+def test_annotation_does_not_reach_the_diagnostic_figure(all_runs) -> None:
+    """--annotate takes no effect there, so the bytes must be identical."""
+    without = {k: v for k, v in all_runs[(False, True, False, False)].items() if "check" in k}
+    annotated = {k: v for k, v in all_runs[(False, True, False, True)].items() if "check" in k}
+    assert without and annotated
+    assert without == annotated
 
 
 def test_every_combination_writes_something(all_runs) -> None:
@@ -177,10 +266,10 @@ def test_every_combination_writes_something(all_runs) -> None:
 def test_a_baseline_run_never_writes_the_raw_figure(spectra, tmp_path) -> None:
     """Running every combination into one shared directory, raw survives intact."""
     shared = tmp_path / "shared"
-    raw_bytes = run(spectra, shared, False, False, False)["s_overlay.png"]
-    for baseline, diagnostic, logy in COMBINATIONS:
-        if not baseline and not diagnostic and not logy:
+    raw_bytes = run(spectra, shared, False, False, False, False)["s_overlay.png"]
+    for baseline, diagnostic, logy, annotate in COMBINATIONS:
+        if not baseline and not diagnostic and not logy and not annotate:
             continue
-        run(spectra, shared, baseline, diagnostic, logy)
+        run(spectra, shared, baseline, diagnostic, logy, annotate)
     survivor = (shared / "exp" / "s_overlay.png").read_bytes()
     assert survivor == raw_bytes, "another combination overwrote the raw figure"

@@ -12,7 +12,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from ramsess.io import list_experiments, load_experiment  # noqa: E402
 from ramsess.report import (  # noqa: E402
     HardCheckFailure,
+    common_window_ranges,
     hard_failures,
+    load_bands_config,
     print_baseline_config,
     print_report,
     quantify_experiment,
@@ -59,6 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         "--baseline-diagnostic",
         action="store_true",
         help="write a per-window figure showing each fit and its result",
+    )
+    plot.add_argument(
+        "--annotate",
+        action="store_true",
+        help="label each panel with the bands configured in bands.json",
     )
     plot.add_argument("--baseline-lam", type=float, help="override the baseline smoothness")
     plot.add_argument("--baseline-p", type=float, help="override the baseline asymmetry")
@@ -156,6 +163,21 @@ def main(argv: list[str] | None = None) -> int:
         print_baseline_config(values, sources)
         baseline_params = values
 
+    # Only --annotate reads bands.json. Plain plot touches no configuration file
+    # at all and must keep working in an experiment that has none.
+    bands = None
+    if args.annotate:
+        try:
+            _, bands, _ = load_bands_config(
+                RAW_ROOT / args.experiment, common_window_ranges(spectra)
+            )
+        except FileNotFoundError as exc:
+            print(f"error: --annotate needs a band configuration: {exc}", file=sys.stderr)
+            return 1
+        except (ValueError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
     try:
         write_sample_overlays(
             args.experiment,
@@ -167,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
             baseline=args.baseline,
             diagnostic=args.baseline_diagnostic,
             baseline_params=baseline_params,
+            annotate=args.annotate,
+            bands=bands,
         )
     except HardCheckFailure as exc:
         # The individual failures have already been printed to stderr.

@@ -7,6 +7,7 @@ this module smooths, baseline-corrects, normalises or rescales the data.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib
 import numpy as np
@@ -19,9 +20,17 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
+from matplotlib.transforms import blended_transform_factory  # noqa: E402
 
 from ramsess.analysis import correct_baseline  # noqa: E402
 from ramsess.io import WINDOW_ORDER, Spectrum, window_sort_key  # noqa: E402
+
+if TYPE_CHECKING:
+    # Only for the annotation parameter's type. Imported under TYPE_CHECKING so
+    # that importing this module does not pull report.py in at runtime: report
+    # imports plotting lazily to keep matplotlib off the inspect path, and a
+    # module-level import back the other way would undo half of that.
+    from ramsess.report import BandSpec
 
 CONTROL_STEP = 0
 CONTROL_COLOR = "black"
@@ -40,6 +49,35 @@ DIAGNOSTIC_ROW_HEIGHT = 1.6
 
 X_LABEL = "Raman shift (cm-1)"
 Y_LABEL = "Intensity (counts)"
+
+# Point size of a band label. Labels are rotated upright, so this sets their
+# horizontal footprint far more than their vertical one.
+ANNOTATION_FONT_SIZE = 12
+# Width of the vertical rule dropped from a label to the axis.
+ANNOTATION_RULE_WIDTH = 0.6
+# Rule transparency, so a rule crossing a trace does not read as data.
+ANNOTATION_RULE_ALPHA = 0.45
+# Near-black for the label, so it carries to the back of a room. Not black: the
+# control step is drawn in black and a label should not read as a trace.
+ANNOTATION_TEXT_COLOR = "0.15"
+# The rule stays grey, and keeps its own alpha on top. Separate from the text
+# colour so the label can be darkened without the rule following it.
+ANNOTATION_RULE_COLOR = "0.35"
+# Below every data trace, whose default zorder is 2, and above the axes patch.
+ANNOTATION_ZORDER = 0.5
+# Vertical gap between stacked label rows, and below the lowest row, as a
+# multiple of the measured label line height so it scales with the font.
+ANNOTATION_ROW_GAP = 0.35
+# Gap between the top of the panel and the first row, in the same units.
+ANNOTATION_TOP_PAD = 0.35
+# How far apart two labels in one row must sit, as a multiple of their measured
+# half-extents. Above 1.0 so they are separated rather than merely touching.
+# Dimensionless on purpose: the spacing itself comes from the renderer.
+ANNOTATION_MIN_CLEARANCE = 1.15
+# Gap between the foot of a label and the top of its own rule, in the same units
+# as the two above. Below ANNOTATION_ROW_GAP, which is what keeps every rule top
+# inside the reserved band and so strictly above the traces.
+ANNOTATION_RULE_CLEARANCE = 0.25
 
 
 def _spectra_by_window(spectra: list[Spectrum]) -> dict[str, list[Spectrum]]:
@@ -188,10 +226,186 @@ def _draw_break_marks(left_axes: plt.Axes, right_axes: plt.Axes) -> None:
     right_axes.plot([0, 0], [0, 1], transform=right_axes.transAxes, **marker)
 
 
+def _annotate_band_centres(
+    figure: plt.Figure,
+    panel: plt.Axes,
+    window: str,
+    bands: dict[str, BandSpec],
+    logy: bool,
+) -> list[list[str]]:
+    """Label every configured band of one window along the top of one panel.
+
+    Each label is the band's configured centre, rotated upright and anchored to
+    the top of the panel, never to the peak it names. That is deliberate: a
+    panel whose tallest band is tens of times the others would otherwise crowd
+    every small label into the floor of the figure, and how legible a label is
+    would depend on how tall its band happened to be. A rule drops from each
+    label to the axis, stopping below the label's own foot so it never runs
+    through the text it belongs to.
+
+    Where two labels in a row would touch, the second drops to the row below.
+    The spacing that decides this is measured from the rendered text, never
+    assumed, because it depends on the font, the label strings and the panel's
+    drawn width, none of which this module may hardcode.
+
+    The panel's top limit is then raised to hold the rows used, so the labels
+    sit above the traces rather than inside them. The bottom limit is left
+    exactly as it was, because a corrected panel's floor is legitimately below
+    zero and anchoring to zero would move the data. Any legend the caller
+    already put on the panel is confined to the data region below the reserved
+    band, so it cannot settle on top of the labels.
+
+    Args:
+        figure: The figure the panel belongs to, for its renderer.
+        panel: The panel to annotate.
+        window: That panel's window label. Only bands configured for it are
+            drawn; a band belonging to the other window is not this panel's.
+        bands: The configured bands, exactly as ``load_bands_config`` returns
+            them.
+        logy: Whether the panel is on a log y-scale, which changes how the top
+            limit has to be raised.
+
+    Returns:
+        The band names placed, one list per row, top row first. Empty when the
+        panel has no configured band.
+
+    Raises:
+        ValueError: If the rows needed would fill the whole panel, leaving no
+            room for the data. Refusing is the only honest outcome: the figure
+            cannot both hold the labels and show the spectra.
+    """
+    selected = sorted(
+        (spec for spec in bands.values() if spec.window == window),
+        key=lambda spec: spec.centre,
+    )
+    if not selected:
+        return []
+
+    renderer = figure.canvas.get_renderer()
+    # x in data units so a label tracks its centre, y in axes fractions so it
+    # tracks the top of the panel rather than a value.
+    blended = blended_transform_factory(panel.transData, panel.transAxes)
+
+    def label(spec: BandSpec, y: float):
+        # The label is the configured centre, not the band name. A rotated
+        # label's height is the length of its text, and that height is what the
+        # reserved band is made of, so a short label buys back panel height that
+        # a smaller font cannot. The centre comes from the caller's spec; no
+        # position is written here. `:g` drops the point from a whole number.
+        return panel.text(
+            spec.centre,
+            y,
+            f"{spec.centre:g}",
+            transform=blended,
+            rotation=90,
+            fontsize=ANNOTATION_FONT_SIZE,
+            color=ANNOTATION_TEXT_COLOR,
+            horizontalalignment="center",
+            verticalalignment="top",
+            zorder=ANNOTATION_ZORDER,
+        )
+
+    # Measure each label exactly as it will be drawn, then discard the probe.
+    # Rotated upright, a label's width is its line height and its height is the
+    # length of its text, so both numbers come from the renderer.
+    widths: list[float] = []
+    heights: list[float] = []
+    for spec in selected:
+        probe = label(spec, 1.0)
+        box = probe.get_window_extent(renderer=renderer)
+        widths.append(float(box.width))
+        heights.append(float(box.height))
+        probe.remove()
+
+    centres_px = [float(panel.transData.transform((spec.centre, 0.0))[0]) for spec in selected]
+
+    # Rows are filled top down. A label goes in the topmost row where it clears
+    # the label already placed there; the panel is walked left to right, so that
+    # is always the rightmost one in the row.
+    rows: list[list[int]] = []
+    occupied: list[tuple[float, float]] = []
+    for index in range(len(selected)):
+        half = widths[index] / 2.0
+        target = None
+        for row, (last_centre, last_half) in enumerate(occupied):
+            needed = ANNOTATION_MIN_CLEARANCE * (last_half + half)
+            if centres_px[index] - last_centre >= needed:
+                target = row
+                break
+        if target is None:
+            rows.append([])
+            occupied.append((0.0, 0.0))
+            target = len(rows) - 1
+        rows[target].append(index)
+        occupied[target] = (centres_px[index], half)
+
+    line_height = max(widths)
+    gap = ANNOTATION_ROW_GAP * line_height
+    row_heights = [max(heights[index] for index in row) for row in rows]
+    # Pad above the first row, each row, and a gap under every row so the lowest
+    # label clears the traces.
+    reserved = ANNOTATION_TOP_PAD * line_height + sum(row_heights) + gap * len(rows)
+
+    panel_height = float(panel.get_window_extent(renderer=renderer).height)
+    fraction = reserved / panel_height
+    if fraction >= 1.0:
+        raise ValueError(
+            f"band labels for window {window!r} need {reserved:.0f} of the panel's "
+            f"{panel_height:.0f} pixels, leaving no room for the data: "
+            f"{len(selected)} band(s) over {len(rows)} row(s)"
+        )
+
+    # Raise the top so the reserved band is empty, compressing what is already
+    # drawn into the rest. The bottom never moves.
+    bottom, top = panel.get_ylim()
+    if logy:
+        low, high = float(np.log10(bottom)), float(np.log10(top))
+        panel.set_ylim(bottom, float(10.0 ** (low + (high - low) / (1.0 - fraction))))
+    else:
+        panel.set_ylim(bottom, bottom + (top - bottom) / (1.0 - fraction))
+
+    # Keep the legend out of the band just reserved. Its placement is still
+    # chosen by loc="best", but searched only over the data region: "best"
+    # scores candidates against the data, and the reserved band is empty of data
+    # by construction, so without this it reads as the emptiest part of the
+    # panel and the legend lands on top of the labels. Guarded because nothing
+    # in this function's contract says the caller made a legend.
+    legend = panel.get_legend()
+    if legend is not None:
+        legend.set_bbox_to_anchor(
+            (0.0, 0.0, 1.0, 1.0 - fraction), transform=panel.transAxes
+        )
+
+    # Labels and rules are placed together, because a rule has to stop below the
+    # foot of its own label and where that foot sits depends on the label's row.
+    # ymin/ymax are axes fractions, so this needs no unit conversion and behaves
+    # the same on a log axis. The top stays inside the reserved band, and so
+    # above every trace, because the clearance is smaller than the row gap.
+    cursor = ANNOTATION_TOP_PAD * line_height
+    for row, indices in enumerate(rows):
+        y = 1.0 - cursor / panel_height
+        for index in indices:
+            spec = selected[index]
+            label(spec, y)
+            foot = y - (heights[index] + ANNOTATION_RULE_CLEARANCE * line_height) / panel_height
+            panel.axvline(
+                spec.centre,
+                ymax=foot,
+                color=ANNOTATION_RULE_COLOR,
+                linewidth=ANNOTATION_RULE_WIDTH,
+                alpha=ANNOTATION_RULE_ALPHA,
+                zorder=ANNOTATION_ZORDER,
+            )
+        cursor += row_heights[row] + gap
+
+    return [[selected[index].name for index in row] for row in rows]
+
+
 def build_sample_overlay(
     spectra: list[Spectrum],
     logy: bool = False,
     baseline_params: dict[str, dict[str, float | int]] | None = None,
+    bands: dict[str, BandSpec] | None = None,
 ) -> plt.Figure:
     """Build the broken-axis overlay figure for one sample.
 
@@ -212,14 +426,19 @@ def build_sample_overlay(
             so each window may be corrected with its own smoothness. When given,
             the baseline-corrected values are drawn instead of the raw ones and
             the title says so. When None the raw file contents are drawn.
+        bands: The configured bands, exactly as ``load_bands_config`` returns
+            them. When given, each panel is labelled with the bands configured
+            for its window. When None nothing is drawn and no limit is changed,
+            so the figure is bit for bit what it has always been.
 
     Returns:
         The open figure.
 
     Raises:
         ValueError: If ``spectra`` is empty, holds more than one sample, carries
-            an unknown window label, or if the tripwire finds that any drawn
-            line no longer matches the data it should.
+            an unknown window label, if the labels would fill a whole panel, or
+            if the tripwire finds that any drawn line no longer matches the data
+            it should.
     """
     if not spectra:
         raise ValueError("no spectra given")
@@ -309,6 +528,11 @@ def build_sample_overlay(
             frameon=True,
             title="step",
         )
+
+        # Last, so the labels are measured against the panel's final limits and
+        # the reserved band is added on top of the clamp above, not before it.
+        if bands is not None:
+            _annotate_band_centres(figure, panel, window, bands, logy)
 
     axes[0].set_ylabel(Y_LABEL)
 
@@ -605,6 +829,7 @@ def plot_sample_overlay(
     output_path: Path,
     logy: bool = False,
     baseline_params: dict[str, dict[str, float | int]] | None = None,
+    bands: dict[str, BandSpec] | None = None,
 ) -> Path:
     """Draw every step of one sample as a broken-axis overlay and save it.
 
@@ -617,6 +842,7 @@ def plot_sample_overlay(
             existing file is overwritten.
         logy: Put both panels on a log y-scale.
         baseline_params: Passed through; None draws raw data.
+        bands: Passed through; None draws no band labels.
 
     Returns:
         The path written.
@@ -624,7 +850,9 @@ def plot_sample_overlay(
     Raises:
         ValueError: Anything :func:`build_sample_overlay` raises.
     """
-    figure = build_sample_overlay(spectra, logy=logy, baseline_params=baseline_params)
+    figure = build_sample_overlay(
+        spectra, logy=logy, baseline_params=baseline_params, bands=bands
+    )
     return _save(figure, output_path)
 
 
