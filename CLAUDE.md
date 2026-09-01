@@ -183,6 +183,27 @@ signal-to-noise is computed and the summary says so rather than guessing a
 region. Validation rejects unknown windows, a missing reference, search windows
 that overlap within one spectral window, and out-of-range windows.
 
+**`glycine_1443` and `glycine_1458` carry `half_width` 7, and that value is
+forced.** They are the two members of a doublet about 15 cm-1 apart, and 7 is
+the only width that works from either side: at 6 the search window holds 4
+points, below `MIN_POINTS`, and `measure_band` raises; at 8 the two windows
+become [1435, 1451] and [1450, 1466] and `load_bands_config` rejects them as
+overlapping. The result leaves **1 cm-1** between the two search windows, so
+moving either centre by one breaks the configuration.
+
+The doublet was split into two bands deliberately. A single band wide enough to
+hold both locates the lower member in ech4, at every step, and the upper member
+in six of ech2's seven steps — so one band name would mean two different
+vibrational modes depending on the sample. Measured in entry 009, which also
+records the positions: 1441.8-1444.3 and 1457.0-1459.5.
+
+Note that **`half_width` appears in neither `bands.csv` nor `provenance.json`**.
+The CSV carries each band's name, centre and window, so those are recoverable
+from derived output alone; the width is not recorded anywhere outside this file.
+Two runs differing only in a `half_width` produce derived trees that are
+indistinguishable as configuration yet hold genuinely different measurements.
+That matters most for these two bands, whose unusual width is load-bearing.
+
 `quantify` deliberately has **no baseline flags**, unlike `plot`. Derived data
 must be reproducible from raw plus config alone; a CLI override would let
 someone generate derived files whose parameters exist only in their shell

@@ -4,8 +4,13 @@
     "si_522":       {"centre": 522,  "half_width": 15, "window": "low"},
     "glycine_893":  {"centre": 893,  "half_width": 15, "window": "low"},
     "glycine_979":  {"centre": 979,  "half_width": 15, "window": "low"},
+    "glycine_1038": {"centre": 1038, "half_width": 10, "window": "low"},
     "glycine_1328": {"centre": 1328, "half_width": 15, "window": "low"},
     "glycine_1412": {"centre": 1412, "half_width": 15, "window": "low"},
+    "glycine_1443": {"centre": 1443, "half_width": 7,  "window": "low"},
+    "glycine_1458": {"centre": 1458, "half_width": 7,  "window": "low"},
+    "glycine_1571": {"centre": 1571, "half_width": 15, "window": "low"},
+    "glycine_1673": {"centre": 1673, "half_width": 15, "window": "low"},
     "glycine_2975": {"centre": 2975, "half_width": 15, "window": "high"},
     "glycine_3012": {"centre": 3012, "half_width": 15, "window": "high"},
     "glycine_3146": {"centre": 3146, "half_width": 15, "window": "high"}
