@@ -57,7 +57,8 @@ def cli_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def figures(root: Path) -> set[str]:
-    return {path.name for path in (root / "figures" / EXPERIMENT).glob("*.png")}
+    """Every figure written, by name. Recursive: they live one per sample now."""
+    return {path.name for path in (root / "figures" / EXPERIMENT).rglob("*.png")}
 
 
 def test_plain_plot_still_works_without_a_bands_config(cli_roots: Path) -> None:

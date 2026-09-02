@@ -373,5 +373,7 @@ def test_a_baseline_run_never_writes_the_raw_figure(spectra, tmp_path) -> None:
         if not any((baseline, diagnostic, logy, annotate, exclude)):
             continue
         run(spectra, shared, baseline, diagnostic, logy, annotate, exclude)
-    survivor = (shared / "exp" / "s_overlay.png").read_bytes()
+    # Reconstructed by hand rather than read back from a return value, so it
+    # carries the layout: figures/<experiment>/<sample>/.
+    survivor = (shared / "exp" / "s" / "s_overlay.png").read_bytes()
     assert survivor == raw_bytes, "another combination overwrote the raw figure"

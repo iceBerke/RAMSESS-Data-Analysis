@@ -322,7 +322,7 @@ def test_plot_sample_band_trends_writes_the_path_it_was_given_and_closes_up(
     sample = SAMPLES[0]
     # The filename is composed by quantify_experiment, not by this function; it
     # writes wherever it is pointed.
-    target = tmp_path / "figures" / "exp" / f"{sample}_bands.png"
+    target = tmp_path / "figures" / "exp" / sample / f"{sample}_bands.png"
     assert not target.parent.exists()
 
     written = plot_sample_band_trends(

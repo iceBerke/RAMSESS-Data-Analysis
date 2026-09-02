@@ -35,7 +35,21 @@ data/derived/
 # anything - the directory has to be re-included before a file inside it can
 # be. The last pattern keys on the _overlay.png suffix alone: it names no
 # sample, and it must not match _overlay_log.png or _overlay_baseline.png.
+#
+# Three levels, because figures are laid out as
+# figures/<experiment>/<sample>/, one directory deeper than they once were. A
+# pattern short by one component stops matching entirely: with the two-level
+# rules, figures/<experiment>/<sample>/<sample>_overlay.png matched
+# `figures/*/*` and the reference overlays became ignored. They stayed tracked,
+# because gitignore only governs untracked files - but once untracked for any
+# reason `git add` refuses them, and the baseline has no second copy.
+#
+# bands_all_samples.png is the one figure with no sample to live under, so it
+# sits at figures/<experiment>/ and `figures/*/*` ignores it, which is right:
+# it is build output like everything else that is not a reference overlay.
 figures/*
 !figures/*/
 figures/*/*
-!figures/*/*_overlay.png
+!figures/*/*/
+figures/*/*/*
+!figures/*/*/*_overlay.png

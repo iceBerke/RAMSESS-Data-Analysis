@@ -942,7 +942,7 @@ def write_sample_overlays(
     else:
         wanted = sorted(by_sample)
 
-    output_directory = figures_root / experiment
+    experiment_directory = figures_root / experiment
 
     # Filenames encode every flag that changes what is drawn, so that the same
     # path always means the same bytes and no combination can overwrite
@@ -964,6 +964,10 @@ def write_sample_overlays(
     written: list[Path] = []
     for name in wanted:
         group = by_sample[name]
+        # One directory per sample. Every figure this function writes belongs to
+        # exactly one sample, including the per-window diagnostic, so all of them
+        # go inside it.
+        output_directory = experiment_directory / name
 
         # Raw stays the default. A baseline mode writes to its own filenames and
         # never touches the raw figure, so both persist side by side on disk.
@@ -1483,20 +1487,25 @@ def quantify_experiment(
     csv_path = write_bands_csv(experiment, rows, derived_root, raw_root)
     print(f"wrote {csv_path}   {len(rows)} measurement(s)")
 
-    output_directory = guard_not_under_raw(figures_root / experiment, raw_root)
+    experiment_directory = guard_not_under_raw(figures_root / experiment, raw_root)
     for name in sorted({str(r["sample"]) for r in rows}):
         path = plot_sample_band_trends(
             rows,
             name,
             reference,
-            guard_not_under_raw(output_directory / f"{name}_bands.png", raw_root),
+            guard_not_under_raw(
+                experiment_directory / name / f"{name}_bands.png", raw_root
+            ),
             MIN_SIGNAL_TO_NOISE,
         )
         print(f"wrote {path}")
+    # The one figure with no sample to live under: it overlays every sample at
+    # once, so it belongs to the experiment rather than to any one of them and
+    # stays a level up. The tree is mixed-depth on purpose.
     path = plot_all_sample_band_trends(
         rows,
         reference,
-        guard_not_under_raw(output_directory / "bands_all_samples.png", raw_root),
+        guard_not_under_raw(experiment_directory / "bands_all_samples.png", raw_root),
         MIN_SIGNAL_TO_NOISE,
     )
     print(f"wrote {path}")

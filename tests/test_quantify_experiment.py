@@ -392,8 +392,10 @@ def test_every_figure_is_written_to_the_expected_path(
     figures = out_root / "figures" / EXPERIMENT
     samples = sorted({str(r["sample"]) for r in rows})
     expected = {f"{name}_bands.png" for name in samples} | {"bands_all_samples.png"}
-    assert {p.name for p in figures.iterdir()} == expected
-    for path in figures.iterdir():
+    # One directory per sample, with bands_all_samples.png a level up.
+    found = {p.name for p in figures.rglob("*.png")}
+    assert found == expected
+    for path in figures.rglob("*.png"):
         assert path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
@@ -434,7 +436,7 @@ def test_stdout_announces_every_file_it_wrote(
     assert f"wrote {derived / 'provenance.json'}" in captured.out
     assert f"wrote {derived / 'bands.csv'}   {len(rows)} measurement(s)" in captured.out
     for name in sorted({str(r["sample"]) for r in rows}):
-        assert f"wrote {figures / f'{name}_bands.png'}" in captured.out
+        assert f"wrote {figures / name / f'{name}_bands.png'}" in captured.out
     assert f"wrote {figures / 'bands_all_samples.png'}" in captured.out
     for window in sorted({s.window for s in spectra}):
         assert f"  noise region for {window}: [" in captured.out
@@ -508,7 +510,7 @@ def test_a_gap_in_the_step_sequence_is_measured_not_rejected(
     assert missing not in {int(r["step"]) for r in rows}
     # The figure still gets written; the gap shows as a gap because steps are
     # placed at their actual value.
-    assert (tmp_path / "out" / "figures" / EXPERIMENT / "sa_bands.png").is_file()
+    assert (tmp_path / "out" / "figures" / EXPERIMENT / "sa" / "sa_bands.png").is_file()
 
 
 def test_a_controls_only_sample_is_measured_as_a_single_point(
@@ -527,7 +529,7 @@ def test_a_controls_only_sample_is_measured_as_a_single_point(
     assert controls_only
     assert {int(r["step"]) for r in controls_only} == {0}
     figures = tmp_path / "out" / "figures" / EXPERIMENT
-    assert (figures / "sa_bands.png").is_file()
+    assert (figures / "sa" / "sa_bands.png").is_file()
     # bands_all_samples.png includes the controls-only sample, as a single point.
     assert (figures / "bands_all_samples.png").is_file()
 
@@ -591,7 +593,7 @@ def test_sample_missing_the_reference_window_normalises_to_none_pending_items_2_
     assert all(isinstance(r["height"], float) for r in mine)
 
     # It is written and drawn regardless, with no warning of its own.
-    assert (out_root / "figures" / EXPERIMENT / "sa_bands.png").is_file()
+    assert (out_root / "figures" / EXPERIMENT / "sa" / "sa_bands.png").is_file()
     with (out_root / "derived" / EXPERIMENT / "bands.csv").open(
         encoding="utf-8", newline=""
     ) as handle:
@@ -743,12 +745,15 @@ def test_sample_filter_restricts_measurement_but_not_the_export(
     assert {entry["sample"] for entry in table} == {wanted}
     assert len(table) == len(rows)
 
-    # (c) exactly one per-sample figure, plus the all-samples one.
+    # (c) exactly one per-sample figure, in its own directory, plus the
+    # all-samples one a level up.
     figures = out_root / "figures" / EXPERIMENT
-    assert {p.name for p in figures.iterdir()} == {
+    assert {p.name for p in figures.rglob("*.png")} == {
         f"{wanted}_bands.png",
         "bands_all_samples.png",
     }
+    assert (figures / wanted / f"{wanted}_bands.png").is_file()
+    assert (figures / "bands_all_samples.png").is_file()
 
 
 def test_an_unknown_sample_raises_naming_the_available_samples(

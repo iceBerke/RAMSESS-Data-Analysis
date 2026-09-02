@@ -224,7 +224,8 @@ REGENERATE_LOG = (
 
 
 def reference_png(sample: str) -> Path:
-    return FIGURES_DIR / f"{sample}_overlay.png"
+    """One directory per sample, so the reference lives beside its own build output."""
+    return FIGURES_DIR / sample / f"{sample}_overlay.png"
 
 
 @pytest.fixture(scope="module")
@@ -289,9 +290,9 @@ def test_no_log_scaled_figure_occupies_a_reference_filename() -> None:
         pytest.skip(f"figures/ not generated; run:  {REGENERATE}")
 
     present = [
-        (sample, FIGURES_DIR / f"{sample}_overlay_log.png")
+        (sample, FIGURES_DIR / sample / f"{sample}_overlay_log.png")
         for sample in sorted(REFERENCE_STRUCTURE)
-        if (FIGURES_DIR / f"{sample}_overlay_log.png").is_file()
+        if (FIGURES_DIR / sample / f"{sample}_overlay_log.png").is_file()
     ]
     if not present:
         pytest.skip(
